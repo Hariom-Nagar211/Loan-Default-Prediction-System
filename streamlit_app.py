@@ -7,6 +7,167 @@ from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
 
+# Define the SimplePreprocessor class that matches the exported one
+class SimplePreprocessor:
+    """Simple preprocessor that matches your notebook preprocessing"""
+    
+    def __init__(self):
+        self.encoders = {}
+        self.is_fitted = False
+        self.emp_title_mapping = {}
+        self.cat_mappings = {}
+        
+    def fit_transform(self, df):
+        """Fit and transform the data"""
+        df = df.copy()
+        
+        # Apply the same preprocessing logic from your notebook
+        # Term encoding
+        df['term'] = df['term'].astype(str).str.extract(r'(\d+)').astype(float)
+        
+        # Initial list status
+        df['initial_list_status'] = df['initial_list_status'].map({'w': 0, 'f': 1})
+        
+        # Employment length
+        emp_map = {
+            '< 1 year': 0, '1 year': 1, '2 years': 2, '3 years': 3, '4 years': 4,
+            '5 years': 5, '6 years': 6, '7 years': 7, '8 years': 8, '9 years': 9,
+            '10+ years': 10
+        }
+        df['emp_length'] = df['emp_length'].map(emp_map)
+        
+        # Grade encoding
+        grade_order = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5, 'G': 6}
+        df['grade'] = df['grade'].map(grade_order)
+        
+        # Sub-grade encoding (if exists)
+        if 'sub_grade' in df.columns:
+            subgrade_order = sorted(df['sub_grade'].dropna().unique())
+            subgrade_mapping = {v: i for i, v in enumerate(subgrade_order)}
+            df['sub_grade'] = df['sub_grade'].map(subgrade_mapping)
+        
+        # Categorical encoding for key columns
+        cat_cols = ['verification_status', 'application_type', 'home_ownership', 'purpose']
+        for col in cat_cols:
+            if col in df.columns:
+                unique_vals = df[col].unique()
+                mapping = {val: i for i, val in enumerate(unique_vals)}
+                df[col] = df[col].map(mapping)
+                self.cat_mappings[col] = mapping
+        
+        # Employment title encoding
+        if 'emp_title' in df.columns:
+            top_titles = df['emp_title'].value_counts().nlargest(20).index
+            df['emp_title'] = df['emp_title'].apply(lambda x: x if x in top_titles else 'Other')
+            unique_titles = df['emp_title'].unique()
+            title_mapping = {title: i for i, title in enumerate(unique_titles)}
+            df['emp_title'] = df['emp_title'].map(title_mapping)
+            self.emp_title_mapping = title_mapping
+        
+        # Date features
+        if 'issue_d' in df.columns:
+            df['issue_d'] = pd.to_datetime(df['issue_d'], format='%b-%Y', errors='coerce')
+            df['issue_year'] = df['issue_d'].dt.year
+            df['issue_month'] = df['issue_d'].dt.month
+            df.drop(columns=['issue_d'], inplace=True)
+        
+        if 'earliest_cr_line' in df.columns:
+            df['earliest_cr_line'] = pd.to_datetime(df['earliest_cr_line'], format='%b-%Y', errors='coerce')
+            df['earliest_cr_year'] = df['earliest_cr_line'].dt.year
+            df.drop(columns=['earliest_cr_line'], inplace=True)
+        
+        # Binary features
+        if 'pub_rec' in df.columns:
+            df['pub_rec'] = df['pub_rec'].apply(lambda x: 0 if x == 0.0 else 1)
+        
+        if 'mort_acc' in df.columns:
+            df['mort_acc'] = df['mort_acc'].apply(lambda x: 0 if x == 0.0 else (1 if x >= 1.0 else x))
+        
+        if 'pub_rec_bankruptcies' in df.columns:
+            df['pub_rec_bankruptcies'] = df['pub_rec_bankruptcies'].apply(lambda x: 0 if x == 0.0 else (1 if x >= 1.0 else x))
+        
+        # Drop unnecessary columns
+        columns_to_drop = ['title', 'address', 'zip_code', 'addr_state']
+        for col in columns_to_drop:
+            if col in df.columns:
+                df.drop(columns=[col], inplace=True)
+        
+        self.is_fitted = True
+        return df
+    
+    def transform(self, df):
+        """Transform new data"""
+        if not self.is_fitted:
+            raise ValueError("Preprocessor must be fitted before transform")
+        
+        # Apply the same transformations
+        df = df.copy()
+        
+        # Term encoding
+        df['term'] = df['term'].astype(str).str.extract(r'(\d+)').astype(float)
+        
+        # Initial list status
+        df['initial_list_status'] = df['initial_list_status'].map({'w': 0, 'f': 1})
+        
+        # Employment length
+        emp_map = {
+            '< 1 year': 0, '1 year': 1, '2 years': 2, '3 years': 3, '4 years': 4,
+            '5 years': 5, '6 years': 6, '7 years': 7, '8 years': 8, '9 years': 9,
+            '10+ years': 10
+        }
+        df['emp_length'] = df['emp_length'].map(emp_map)
+        
+        # Grade encoding
+        grade_order = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5, 'G': 6}
+        df['grade'] = df['grade'].map(grade_order)
+        
+        # Sub-grade encoding
+        if 'sub_grade' in df.columns:
+            subgrade_order = sorted(df['sub_grade'].dropna().unique())
+            subgrade_mapping = {v: i for i, v in enumerate(subgrade_order)}
+            df['sub_grade'] = df['sub_grade'].map(subgrade_mapping)
+        
+        # Categorical encoding using stored mappings
+        cat_cols = ['verification_status', 'application_type', 'home_ownership', 'purpose']
+        for col in cat_cols:
+            if col in df.columns and col in self.cat_mappings:
+                df[col] = df[col].map(self.cat_mappings[col])
+        
+        # Employment title encoding using stored mapping
+        if 'emp_title' in df.columns and self.emp_title_mapping:
+            df['emp_title'] = df['emp_title'].apply(lambda x: x if x in self.emp_title_mapping else 'Other')
+            df['emp_title'] = df['emp_title'].map(self.emp_title_mapping)
+        
+        # Date features
+        if 'issue_d' in df.columns:
+            df['issue_d'] = pd.to_datetime(df['issue_d'], format='%b-%Y', errors='coerce')
+            df['issue_year'] = df['issue_d'].dt.year
+            df['issue_month'] = df['issue_d'].dt.month
+            df.drop(columns=['issue_d'], inplace=True)
+        
+        if 'earliest_cr_line' in df.columns:
+            df['earliest_cr_line'] = pd.to_datetime(df['earliest_cr_line'], format='%b-%Y', errors='coerce')
+            df['earliest_cr_year'] = df['earliest_cr_line'].dt.year
+            df.drop(columns=['earliest_cr_line'], inplace=True)
+        
+        # Binary features
+        if 'pub_rec' in df.columns:
+            df['pub_rec'] = df['pub_rec'].apply(lambda x: 0 if x == 0.0 else 1)
+        
+        if 'mort_acc' in df.columns:
+            df['mort_acc'] = df['mort_acc'].apply(lambda x: 0 if x == 0.0 else (1 if x >= 1.0 else x))
+        
+        if 'pub_rec_bankruptcies' in df.columns:
+            df['pub_rec_bankruptcies'] = df['pub_rec_bankruptcies'].apply(lambda x: 0 if x == 0.0 else (1 if x >= 1.0 else x))
+        
+        # Drop unnecessary columns
+        columns_to_drop = ['title', 'address', 'zip_code', 'addr_state']
+        for col in columns_to_drop:
+            if col in df.columns:
+                df.drop(columns=[col], inplace=True)
+        
+        return df
+
 # Page configuration
 st.set_page_config(
     page_title="Loan Defaulters Prediction",
