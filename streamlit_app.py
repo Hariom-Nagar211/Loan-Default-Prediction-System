@@ -222,11 +222,11 @@ class ONNXLoanPredictor:
             # Get input/output details
             self.input_name = self.session.get_inputs()[0].name
             self.output_name = self.session.get_outputs()[0].name
-            
-            return True
+
+            # Don't return anything - __init__ should return None
         except Exception as e:
             st.error(f"Error loading model: {e}")
-            return False
+            # Don't return anything here either
     
     def predict(self, loan_data):
         """Make prediction on loan data"""
@@ -256,13 +256,24 @@ def load_model():
     """Load the ONNX model and preprocessor"""
     model_path = Path("dt_model.onnx")
     preprocessor_path = Path("dt_preprocessor.pkl")
-    
+
     if not model_path.exists() or not preprocessor_path.exists():
         st.error("Model files not found! Please make sure dt_model.onnx and dt_preprocessor.pkl are in the same directory.")
         return None
-    
-    predictor = ONNXLoanPredictor(model_path, preprocessor_path)
-    return predictor
+
+    try:
+        predictor = ONNXLoanPredictor(model_path, preprocessor_path)
+        
+        # Check if the predictor was initialized successfully
+        if hasattr(predictor, 'session') and hasattr(predictor, 'preprocessor'):
+            return predictor
+        else:
+            st.error("Failed to initialize predictor properly")
+            return None
+            
+    except Exception as e:
+        st.error(f"Error creating predictor: {e}")
+        return None
 
 def create_input_form():
     """Create the input form for loan data"""
