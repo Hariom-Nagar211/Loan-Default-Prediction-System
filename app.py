@@ -193,36 +193,40 @@ def load_xgb_model(model_file: str):
 
 def get_onnx_outputs(session, input_array: np.ndarray):
     """
-    Run ONNX inference and return (prediction, probability_of_default).
-    Tries to extract probability from output[1] (probabilities map/array).
-    Falls back to output[0] if probabilities are unavailable.
+    Safely extract (prediction, prob_default) from any sklearn ONNX model.
+    Handles all three output formats skl2onnx produces.
     """
     input_name = session.get_inputs()[0].name
-    output_names = [o.name for o in session.get_outputs()]
-
     results = session.run(None, {input_name: input_array})
 
     prediction = int(results[0][0])
-    prob_default = None  # probability that loan defaults (class 0)
 
-    # output[1] is typically the probability dict/array for sklearn-converted models
+    prob_default = None
+
     if len(results) > 1:
         prob_output = results[1]
 
-        # Case 1: list of dicts  [{0: p0, 1: p1}, ...]
-        if isinstance(prob_output, list) and isinstance(prob_output[0], dict):
-            prob_default = float(prob_output[0].get(0, 0.0))
+        # Format 1: list of dicts  [{0: 0.82, 1: 0.18}]  ← most sklearn models
+        if isinstance(prob_output, list) and len(prob_output) > 0:
+            first = prob_output[0]
+            if isinstance(first, dict):
+                prob_default = float(first.get(0, first.get(0.0, None)))
 
-        # Case 2: numpy array shape (1, 2)
+        # Format 2: numpy array shape (1, 2)  ← some tree models
         elif isinstance(prob_output, np.ndarray):
-            if prob_output.ndim == 2 and prob_output.shape[1] == 2:
-                prob_default = float(prob_output[0][0])
-            elif prob_output.ndim == 1 and len(prob_output) == 2:
-                prob_default = float(prob_output[0])
+            arr = np.squeeze(prob_output)          # flatten to 1D
+            if arr.ndim == 1 and len(arr) == 2:
+                # arr[0] = prob class 0 (default), arr[1] = prob class 1 (repay)
+                # Only trust it if values are valid probabilities
+                if 0.0 <= float(arr[0]) <= 1.0 and 0.0 <= float(arr[1]) <= 1.0:
+                    prob_default = float(arr[0])
+            elif arr.ndim == 0:
+                # Scalar — raw score, NOT a probability, ignore it
+                prob_default = None
 
-    # Fallback: use raw prediction (no real probability info)
-    if prob_default is None:
-        prob_default = 0.85 if prediction == 0 else 0.15
+    # If we still don't have a clean probability, derive from prediction only
+    if prob_default is None or not (0.0 <= prob_default <= 1.0):
+        prob_default = 0.2 if prediction == 1 else 0.8
 
     return prediction, prob_default
 
@@ -381,17 +385,19 @@ def main():
             if input_array is not None:
                 try:
                     if cfg["type"] == "xgb":
-                        # feature_names=None ensures no column-name validation
                         dmatrix = xgb.DMatrix(input_array, feature_names=None)
-                        # predict() returns probability of class 1 (repay)
-                        prob_repay = float(model.predict(dmatrix)[0])
+                        prob_repay   = float(np.clip(model.predict(dmatrix)[0], 0.0, 1.0))
                         prob_default = 1.0 - prob_repay
-                        prediction = 1 if prob_repay >= 0.5 else 0
+                        prediction   = 1 if prob_repay >= 0.5 else 0
                     else:
                         prediction, prob_default = get_onnx_outputs(model, input_array)
+                        prob_default = float(np.clip(prob_default, 0.0, 1.0))  # safety clamp
+
                     display_prediction(prediction, prob_default, model_name, loan_data)
+
                 except Exception as e:
                     st.error(f"Inference error: {e}")
+                    st.exception(e)   # shows full traceback in UI during debugging
 
     # Sidebar info
     st.sidebar.markdown("---")
