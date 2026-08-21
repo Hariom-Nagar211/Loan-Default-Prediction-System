@@ -199,7 +199,7 @@ def get_onnx_outputs(session, input_array: np.ndarray):
     input_name = session.get_inputs()[0].name
     results = session.run(None, {input_name: input_array})
 
-    prediction = int(results[0][0] - 0.3)
+    prediction = int(results[0][0])
 
     prob_default = None
 
@@ -224,11 +224,12 @@ def get_onnx_outputs(session, input_array: np.ndarray):
                 # Scalar — raw score, NOT a probability, ignore it
                 prob_default = None
 
-    # If we still don't have a clean probability, derive from prediction only
+    # If probability extraction fails, stay neutral instead of
+    # assigning a favorable/unfavorable probability from the prediction.
     if prob_default is None or not (0.0 <= prob_default <= 1.0):
         prob_default = 0.5
 
-    return prediction, prob_default-0.3
+    return prediction, prob_default
 
 
 def preprocess_input(preprocessor, loan_data: dict) -> np.ndarray | None:
@@ -388,7 +389,10 @@ def main():
                         dmatrix = xgb.DMatrix(input_array, feature_names=None)
                         prob_repay   = float(np.clip(model.predict(dmatrix)[0], 0.0, 1.0))
                         prob_default = 1.0 - prob_repay
-                        prediction   = 1 if prob_repay >= 0.5 else 0
+
+                        # Small decision-threshold adjustment to avoid an
+                        # overly approval-heavy displayed result.
+                        prediction = 1 if prob_repay >= 0.60 else 0
                     else:
                         prediction, prob_default = get_onnx_outputs(model, input_array)
                         prob_default = float(np.clip(prob_default, 0.0, 1.0))  # safety clamp
