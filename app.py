@@ -392,7 +392,7 @@ def main():
 
                         # Small decision-threshold adjustment to avoid an
                         # overly approval-heavy displayed result.
-                        prediction = 1 if prob_repay >= 0.60 else 0
+                        prediction = 1 if prob_repay >= 0.75 else 0
                     else:
                         prediction, prob_default = get_onnx_outputs(model, input_array)
                         prob_default = float(np.clip(prob_default, 0.0, 1.0))  # safety clamp
