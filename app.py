@@ -226,7 +226,7 @@ def get_onnx_outputs(session, input_array: np.ndarray):
 
     # If we still don't have a clean probability, derive from prediction only
     if prob_default is None or not (0.0 <= prob_default <= 1.0):
-        prob_default = 0.2 if prediction == 1 else 0.8
+        prob_default = 0.5
 
     return prediction, prob_default
 
