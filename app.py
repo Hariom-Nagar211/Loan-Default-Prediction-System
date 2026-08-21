@@ -397,6 +397,11 @@ def main():
                         prediction, prob_default = get_onnx_outputs(model, input_array)
                         prob_default = float(np.clip(prob_default, 0.0, 1.0))  # safety clamp
 
+                        # Use the same 75% repayment threshold for all ONNX models.
+                        # This keeps the decision rule consistent across models.
+                        prob_repay = 1.0 - prob_default
+                        prediction = 1 if prob_repay >= 0.75 else 0
+
                     display_prediction(prediction, prob_default, model_name, loan_data)
 
                 except Exception as e:
