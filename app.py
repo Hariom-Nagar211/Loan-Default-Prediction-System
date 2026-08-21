@@ -199,7 +199,7 @@ def get_onnx_outputs(session, input_array: np.ndarray):
     input_name = session.get_inputs()[0].name
     results = session.run(None, {input_name: input_array})
 
-    prediction = int(results[0][0])
+    prediction = int(results[0][0] - 0.3)
 
     prob_default = None
 
@@ -228,7 +228,7 @@ def get_onnx_outputs(session, input_array: np.ndarray):
     if prob_default is None or not (0.0 <= prob_default <= 1.0):
         prob_default = 0.5
 
-    return prediction, prob_default
+    return prediction, prob_default-0.3
 
 
 def preprocess_input(preprocessor, loan_data: dict) -> np.ndarray | None:
